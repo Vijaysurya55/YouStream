@@ -85,8 +85,9 @@ const WatchPage: React.FC = () => {
       setLoadingRelated(true);
       try {
         const items = await getRelatedVideos(id, 12);
+        const filtered = items.filter((v :any)=> v.id !== id);
         if (canceled) return;
-        setRelated(items);
+        setRelated(filtered);
       } catch (err) {
         console.error("related error", err);
       } finally {
