@@ -101,26 +101,78 @@ export async function getVideoDetails(videoId: string) {
 
 export async function getRelatedVideos(videoId: string, maxResults = 12) {
   if (!videoId) return [];
-  let params:Record <string, string|number>={
-    part: "snippet",
-      relatedToVideoId: videoId,
-      type: "video",
-      maxResults,
+
+  async function fetchVideosByIds(ids: string) {
+    if (!ids) return [];
+    const videosRes = await youtube.get("/videos", {
+      params: {
+        part: "snippet,statistics,contentDetails",
+        id: ids,
+      },
+    });
+    return videosRes.data?.items || [];
   }
-  const searchRes = await youtube.get("/search", {params});
 
-  const searchItems = searchRes.data?.items || [];
-  const ids = searchItems
-    .map((it: any) => it.id?.videoId)
-    .filter(Boolean)
-    .join(",");
+  try {
+    const detailRes = await youtube.get("/videos", {
+      params: { part: "snippet,status", id: videoId },
+    });
+    const videoItem = (detailRes.data?.items && detailRes.data.items[0]) || null;
+    const privacy = videoItem?.status?.privacyStatus;
 
-  if (!ids) return [];
-  params = {
-      part: "snippet,statistics,contentDetails",
-      id: ids,
+    if (privacy && privacy !== "public") {
+      console.warn("getRelatedVideos: video not public — will fallback to title search", { videoId, privacy });
+    } else {
+      // 2) Try the preferred relatedToVideoId approach
+      try {
+        const searchRes = await youtube.get("/search", {
+          params: {
+            part: "snippet",
+            relatedToVideoId: videoId,
+            type: "video",
+            maxResults,
+          },
+        });
+
+        const searchItems = searchRes.data?.items || [];
+        const ids = searchItems.map((it: any) => it.id?.videoId).filter(Boolean).join(",");
+
+        if (ids) {
+          return await fetchVideosByIds(ids);
+        }
+
+        // if no ids returned, we'll fall back below
+        console.warn("getRelatedVideos: relatedToVideoId returned no ids, falling back", { videoId });
+      } catch (err: any) {
+        // Log API response body (if present) to help debug the real cause
+        console.warn("getRelatedVideos: relatedToVideoId failed, falling back to title search", err?.response?.data || err?.message || err);
+      }
+    }
+
+    const title = videoItem?.snippet?.title || "";
+    const keywords = title.split(/\s+/).slice(0, 6).join(" ").trim(); 
+
+    if (!keywords) return [];
+
+    const fallbackSearch = await youtube.get("/search", {
+      params: {
+        part: "snippet",
+        q: keywords,
+        type: "video",
+        maxResults,
+      },
+    });
+
+    const fallbackIds = (fallbackSearch.data?.items || [])
+      .map((item: any) => item.id?.videoId)
+      .filter(Boolean)
+      .join(",");
+
+    if (!fallbackIds) return [];
+
+    return await fetchVideosByIds(fallbackIds);
+  } catch (finalErr: any) {
+    console.error("getRelatedVideos final failure", finalErr?.response?.data || finalErr?.message || finalErr);
+    return [];
   }
-  const videosRes = await youtube.get("/videos", { params});
-
-  return videosRes.data?.items || [];
 }
