@@ -1,4 +1,4 @@
-import { Box, Button, Chip } from "@mui/material";
+import { Box, Chip } from "@mui/material";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 const SearchTabs = () => {

@@ -18,7 +18,7 @@ const youtube = axios.create({
   
 });
 
-export type RawYouTubeVideo = any;
+
 
 export async function getMostPopularVideos(pageToken?: string, maxResults = 12) {
   const params: Record<string, string | number> = {
@@ -27,7 +27,8 @@ export async function getMostPopularVideos(pageToken?: string, maxResults = 12) 
     regionCode: "IN",
     maxResults,
   };
-  if (pageToken) (params).pageToken = pageToken;
+  if (pageToken) 
+    (params).pageToken = pageToken;
 
   const res = await youtube.get("/videos", { params });
   return {
@@ -37,7 +38,11 @@ export async function getMostPopularVideos(pageToken?: string, maxResults = 12) 
 }
 
 export async function searchVideos(query: string, pageToken?: string , maxResults = 12): Promise<SearchResult> {
-  if (!query || query.trim().length === 0) return { videos: [], nextPageToken: null };
+  if (!query || query.trim().length === 0) 
+    return { 
+  videos: [], 
+  nextPageToken: null 
+};
 
   const searchParams: Record<string, string | number> = {
     part: "snippet",
@@ -99,80 +104,99 @@ export async function getVideoDetails(videoId: string) {
   return (res.data?.items && res.data.items[0]) || null;
 }
 
+const RELATED_CACHE_KEY_PREFIX = "youstream_related_v2:"; 
+const RELATED_CACHE_TTL_MS = 259200000; 
+
+function readRelatedCache(key: string) {
+  try {
+    const cachedItems = localStorage.getItem(key);
+    if (!cachedItems) return null;
+    const parsed = JSON.parse(cachedItems);
+    if (Date.now() - (parsed.ts || 0) > RELATED_CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return parsed.items || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRelatedCache(key: string, items: any[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), items }));
+  } catch {}
+}
+
+
 export async function getRelatedVideos(videoId: string, maxResults = 12) {
   if (!videoId) return [];
 
-  async function fetchVideosByIds(ids: string) {
-    if (!ids) return [];
-    const videosRes = await youtube.get("/videos", {
-      params: {
-        part: "snippet,statistics,contentDetails",
-        id: ids,
-      },
-    });
-    return videosRes.data?.items || [];
-  }
+  const cacheKey = RELATED_CACHE_KEY_PREFIX + videoId;
+  const cached = readRelatedCache(cacheKey);
+  if (cached) return cached;
 
   try {
     const detailRes = await youtube.get("/videos", {
-      params: { part: "snippet,status", id: videoId },
+      params: { part: "snippet", id: videoId },
     });
-    const videoItem = (detailRes.data?.items && detailRes.data.items[0]) || null;
-    const privacy = videoItem?.status?.privacyStatus;
+    const v = (detailRes.data?.items && detailRes.data.items[0]) || null;
+    const snippet = v?.snippet || {};
+    const channelId = snippet.channelId;
+    const categoryId = snippet.categoryId;
+    const tags: string[] = snippet.tags || [];
+    const title = snippet.title || "";
 
-    if (privacy && privacy !== "public") {
-      console.warn("getRelatedVideos: video not public — will fallback to title search", { videoId, privacy });
+    const baseSearchParams: Record<string, string | number> = {
+      part: "snippet",
+      type: "video",
+      maxResults,
+    };
+
+    if (channelId) {
+      (baseSearchParams as any).channelId = channelId;
+    } else if (categoryId) {
+      (baseSearchParams as any).videoCategoryId = categoryId;
+    } else if (tags.length) {
+      (baseSearchParams as any).q = tags.slice(0, 5).join(" ");
     } else {
-      // 2) Try the preferred relatedToVideoId approach
-      try {
-        const searchRes = await youtube.get("/search", {
-          params: {
-            part: "snippet",
-            relatedToVideoId: videoId,
-            type: "video",
-            maxResults,
-          },
-        });
-
-        const searchItems = searchRes.data?.items || [];
-        const ids = searchItems.map((it: any) => it.id?.videoId).filter(Boolean).join(",");
-
-        if (ids) {
-          return await fetchVideosByIds(ids);
-        }
-
-        // if no ids returned, we'll fall back below
-        console.warn("getRelatedVideos: relatedToVideoId returned no ids, falling back", { videoId });
-      } catch (err: any) {
-        // Log API response body (if present) to help debug the real cause
-        console.warn("getRelatedVideos: relatedToVideoId failed, falling back to title search", err?.response?.data || err?.message || err);
-      }
+      const keywords = title.split(/\s+/).slice(0, 6).join(" ");
+      (baseSearchParams as any).q = keywords || title;
     }
 
-    const title = videoItem?.snippet?.title || "";
-    const keywords = title.split(/\s+/).slice(0, 6).join(" ").trim(); 
+    const searchRes = await youtube.get("/search", { params: baseSearchParams });
+    const searchItems = searchRes.data?.items || [];
 
-    if (!keywords) return [];
+    const idsArray = Array.from(
+      new Set(
+        searchItems
+          .map((it: any) => (typeof it.id === "string" ? it.id : it.id?.videoId))
+          .filter(Boolean)
+          .filter((id: string) => id !== videoId)
+      )
+    );
 
-    const fallbackSearch = await youtube.get("/search", {
+    if (!idsArray.length) {
+      writeRelatedCache(cacheKey, []); 
+      return [];
+    }
+
+    const idsStr = idsArray.join(",");
+
+    const videosRes = await youtube.get("/videos", {
       params: {
-        part: "snippet",
-        q: keywords,
-        type: "video",
-        maxResults,
+        part: "snippet,statistics,contentDetails",
+        id: idsStr,
       },
     });
 
-    const fallbackIds = (fallbackSearch.data?.items || [])
-      .map((item: any) => item.id?.videoId)
-      .filter(Boolean)
-      .join(",");
+    const fullItems = videosRes.data?.items || [];
 
-    if (!fallbackIds) return [];
+    writeRelatedCache(cacheKey, fullItems);
 
-    return await fetchVideosByIds(fallbackIds);
-  } catch (finalErr: any) {
-    console.error("getRelatedVideos final failure", finalErr?.response?.data || finalErr?.message || finalErr);
+    return fullItems;
+  } catch (err: any) {
+    console.warn("getRelatedVideos (full fetch) failed, returning empty:", err?.response?.data || err?.message || err);
     return [];
   }
 }

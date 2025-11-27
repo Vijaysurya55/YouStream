@@ -15,11 +15,11 @@ const Homepage = () => {
 
 
     useEffect(() => {
-        let ticking = false
+        let scrolled = false
         const threshold = 700 
         const onScroll = () => {
-            if (ticking) return
-            ticking = true
+            if (scrolled) return
+            scrolled = true
             requestAnimationFrame(() => {
                 try {
                     
@@ -29,7 +29,7 @@ const Homepage = () => {
                         dispatch(fetchTrendingVideos(store.nextPageToken))
                     }
                 } finally {
-                    ticking = false
+                    scrolled = false
                 }
             })
         }

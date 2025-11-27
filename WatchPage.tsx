@@ -3,19 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, CircularProgress, Button, Divider } from "@mui/material";
 import moment from "moment";
 import { getVideoDetails, getRelatedVideos } from "../api/youtubeApi";
-import Grids from "../Components/Grid";
+import RelatedVideoItem from "../Components/RelatedVideoItem";
 
-/**
- * Beginner-friendly Watch page
- * - Embedded YouTube iframe
- * - Title, channel, views, published (fromNow)
- * - Description (simple)
- * - Dummy Like / Dislike / Subscribe stored in localStorage
- * - Related videos (clickable)
- */
 
-const LOCAL_LIKES_KEY = "youstream_likes_v1"; // maps videoId -> "like" | "dislike"
-const LOCAL_SUBS_KEY = "youstream_subs_v1"; // array of channelId strings
+const LOCAL_LIKES_KEY = "youstream_likes_v1"; 
+const LOCAL_SUBS_KEY = "youstream_subs_v1"; 
 
 function readLikes(): Record<string, "like" | "dislike"> {
   try {
@@ -49,12 +41,11 @@ const WatchPage: React.FC = () => {
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // local UI state for like/dislike/subscribe (sourced from localStorage)
   const [likesMap, setLikesMap] = useState<Record<string, "like" | "dislike">>(readLikes());
   const [subs, setSubs] = useState<string[]>(readSubs());
 
   useEffect(() => {
-    // load video details
+    
     if (!id) return;
     let canceled = false;
     (async () => {
@@ -78,7 +69,6 @@ const WatchPage: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
-    // load related
     if (!id) return;
     let canceled = false;
     (async () => {
@@ -100,14 +90,14 @@ const WatchPage: React.FC = () => {
     };
   }, [id]);
 
-  // helpers
+  
   const getLikeState = () => likesMap[id || ""] || null;
   const toggleLike = (type: "like" | "dislike") => {
     if (!id) return;
     const cur = likesMap[id];
     const newMap = { ...likesMap };
     if (cur === type) {
-      // remove
+      
       delete newMap[id];
     } else {
       newMap[id] = type;
@@ -135,36 +125,36 @@ const WatchPage: React.FC = () => {
   };
 
   const openRelated = (videoId: string) => {
-    // navigate to watch page for that id
+    
     navigate(`/watch/${videoId}`);
-    window.scrollTo(0, 0); // scroll up
+    window.scrollTo(0, 0); 
   };
 
-  // small view helpers
-  const fmtViews = (nStr: string | number | undefined) => {
+  
+  const formatViews = (nStr: string | number | undefined) => {
     const n = Number(nStr || 0);
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M views";
     if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K views";
     return n + " views";
   };
 
-  const durationToLabel = (iso: string | undefined) => {
-    // naive parser to mm:ss or hh:mm:ss using moment
-    try {
-      if (!iso) return "";
-      // moment.duration can parse ISO 8601 durations
-      const d = moment.duration(iso);
-      const hours = d.hours();
-      const minutes = d.minutes();
-      const seconds = d.seconds();
-      const hh = hours ? `${hours}:` : "";
-      const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
-      const ss = String(seconds).padStart(2, "0");
-      return hh + mm + ":" + ss;
-    } catch {
-      return "";
-    }
-  };
+  // const durationToLabel = (iso: string | undefined) => {
+    
+  //   try {
+  //     if (!iso) return "";
+      
+  //     const d = moment.duration(iso);
+  //     const hours = d.hours();
+  //     const minutes = d.minutes();
+  //     const seconds = d.seconds();
+  //     const hh = hours ? `${hours}:` : "";
+  //     const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
+  //     const ss = String(seconds).padStart(2, "0");
+  //     return hh + mm + ":" + ss;
+  //   } catch {
+  //     return "";
+  //   }
+  // };
 
   if (!id) return <Box p={2}>No video selected</Box>;
 
@@ -196,11 +186,17 @@ const WatchPage: React.FC = () => {
   const stats = video.statistics || {};
   const channelId = snippet.channelId;
 
-  return (
-    <Box p={2} display="grid" gridTemplateColumns={{ xs: "1fr", md: "2fr 1fr" }} gap={2}>
-      {/* Left: player + details */}
-      <Box>
-        <Box sx={{ position: "relative", paddingTop: "56.25%", background: "#000" }}>
+   return (
+    <Box
+      p={2}
+      display="grid"
+      gridTemplateColumns={{ xs: "1fr", md: "4fr 1fr" }}
+      gap={2}
+      alignItems="start"
+    >
+    
+      <Box >
+        <Box sx={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 1, overflow: "hidden" }}>
           <iframe
             title={snippet.title || "video player"}
             src={`https://www.youtube.com/embed/${id}`}
@@ -224,12 +220,12 @@ const WatchPage: React.FC = () => {
           <Box>
             <Typography variant="subtitle2">{snippet.channelTitle}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {fmtViews(stats.viewCount)} • {moment(snippet.publishedAt).fromNow()}
+              {formatViews(stats.viewCount)} • {moment(snippet.publishedAt).fromNow()}
             </Typography>
           </Box>
 
           <Box marginLeft="auto" display="flex" gap={1}>
-            {/* Like / Dislike buttons (dummy) */}
+            
             <Button
               variant={getLikeState() === "like" ? "contained" : "outlined"}
               onClick={() => toggleLike("like")}
@@ -242,8 +238,6 @@ const WatchPage: React.FC = () => {
             >
               👎 Dislike
             </Button>
-
-            {/* Subscribe (dummy) */}
             <Button
               color="primary"
               variant={isSubscribed(channelId) ? "contained" : "outlined"}
@@ -261,7 +255,7 @@ const WatchPage: React.FC = () => {
         </Typography>
       </Box>
 
-      {/* Right: related videos */}
+      
       <Box>
         <Typography variant="subtitle1" mb={1}>
           Related
@@ -272,12 +266,22 @@ const WatchPage: React.FC = () => {
         {!loadingRelated && related.length === 0 && <Typography>No related videos found</Typography>}
 
         {!loadingRelated && related.length > 0 && (
-          // Reuse your Grids component — but map related to the same shape if needed
-          <Grids videos={related} />
+          <Box
+            sx={{
+              maxHeight: "calc(100vh - 180px)", 
+              overflowY: "auto",
+              pr: 1,
+            }}
+          >
+            {related.map((video, index) => (
+              <RelatedVideoItem key={index} video={video} onClick={openRelated} />
+            ))}
+          </Box>
         )}
       </Box>
     </Box>
   );
+
 };
 
 export default WatchPage;
